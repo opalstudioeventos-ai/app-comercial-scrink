@@ -25,6 +25,8 @@ const STATE = {
   freelist: [],
   items: [],
   folio: '',
+  editFolio: null,
+  keepEdit: false,
   saved: false,
   saving: false,
   currentView: 'dashboard',
@@ -169,12 +171,14 @@ function goto(view){
   document.querySelectorAll('.navbtn').forEach(b => b.classList.toggle('active', b.dataset.v === view));
   window.scrollTo(0, 0);
 
-  if (view === 'cotizar' && (!STATE.folio || STATE.saved)) resetCotizador();
+  const entrandoAEditar = STATE.keepEdit;
+  STATE.keepEdit = false;
+  if (view === 'cotizar' && (!STATE.folio || STATE.saved || (STATE.editFolio && !entrandoAEditar))) resetCotizador();
   const titles = {
     dashboard: ['Hola, ' + firstName(STATE.freelance), 'Este es tu resumen de hoy'],
     visitas: ['Visitas y agenda', 'Tu seguimiento comercial'],
     clientes: ['Mis clientes', 'Busca, revisa y da seguimiento'],
-    cotizar: ['Nueva cotización', 'Folio ' + STATE.folio],
+    cotizar: STATE.editFolio ? ['Editar cotización', 'Folio ' + STATE.folio] : ['Nueva cotización', 'Folio ' + STATE.folio],
     pedidos: ['Mis pedidos', 'Cotización, despacho, cobro y novedades'],
     comision: ['Mi comisión', 'Sobre lo cobrado, sin IVA'],
     admin: ['Administración', 'Liquidación de comisiones']
@@ -222,7 +226,7 @@ async function loadAdmin(){
     byId('ad-pag').textContent = money(d.totales.pagada);
     byId('ad-list').innerHTML = d.freelance.map(f =>
       '<div class="fcard"><div class="avatar">' + escapeHtml(initials(f.freelance)) + '</div>' +
-      '<div class="fm"><b>' + escapeHtml(f.freelance) + '</b><span>Pendiente ' + money(f.pendiente) + ' · Pagado ' + money(f.pagada) + '</span></div>' +
+      '<div class="fm"><b>' + escapeHtml(f.freelance) + '</b><span>Preliquidada ' + money(f.preliquidada || 0) + ' · Por pagar ' + money(f.pendiente) + ' · Pagado ' + money(f.pagada) + '</span></div>' +
       '<button class="btn sm ' + (f.lineasPendientes ? 'primary' : '') + '" onclick="abrirLiquidar(\'' + f.freelance.replace(/'/g, "\\'") + '\')">' + (f.lineasPendientes ? 'Liquidar' : 'Ver') + '</button></div>').join('');
   } catch (err){
     toast(errMsg(err), 'err');
@@ -247,7 +251,7 @@ function renderLiquidar(){
   const pag = STATE.liqLineas.filter(l => l.estado === 'Pagada').sort((a, b) => (b.fechaPago || '').localeCompare(a.fechaPago || '')).slice(0, 10);
   byId('lq-pend').innerHTML = pend.length ? pend.map(l =>
     '<label class="chk"><input type="checkbox" class="lq-chk" data-row="' + l.row + '" data-val="' + l.comision + '" checked onchange="actualizarTotalLiq()">' +
-    '<div class="main"><b>' + escapeHtml(l.cliente) + '</b><span>' + l.folio + ' · ' + fmtFecha(l.fecha) + ' · ' + (l.tipo === 'Abono' ? 'Abono' : 'Devolución') + '</span></div>' +
+    '<div class="main"><b>' + escapeHtml(l.cliente) + '</b><span>' + l.folio + ' · ' + fmtFecha(l.fecha) + ' · ' + (l.tipo === 'Abono' ? 'Abono' : l.tipo === 'Bono 1%' ? 'Bono 1% (primer despacho)' : 'Devolución') + '</span></div>' +
     '<span class="amt ' + (l.comision < 0 ? 'neg' : '') + '">' + money(l.comision) + '</span></label>').join('') :
     '<div class="empty" style="padding:16px"><span>No hay comisiones pendientes</span></div>';
   byId('lq-pag').innerHTML = pag.length ? pag.map(l =>
@@ -379,7 +383,9 @@ document.addEventListener('click', (e) => {
   const chip = e.target.closest('#vis-filtros .chip');
   if (chip){ document.querySelectorAll('#vis-filtros .chip').forEach(c => c.classList.remove('on')); chip.classList.add('on'); renderVisitas(); return; }
   const chip2 = e.target.closest('#ped-filtros .chip');
-  if (chip2){ document.querySelectorAll('#ped-filtros .chip').forEach(c => c.classList.remove('on')); chip2.classList.add('on'); renderPedidos(); }
+  if (chip2){ document.querySelectorAll('#ped-filtros .chip').forEach(c => c.classList.remove('on')); chip2.classList.add('on'); renderPedidos(); return; }
+  const chip3 = e.target.closest('#com-filtros .chip');
+  if (chip3){ document.querySelectorAll('#com-filtros .chip').forEach(c => c.classList.remove('on')); chip3.classList.add('on'); renderComision(); }
 });
 
 function fillSelect(id, values, blank){
@@ -549,18 +555,84 @@ function nowFolio(){
   const d = new Date(), z = n => String(n).padStart(2,'0');
   return 'SCK-' + d.getFullYear() + z(d.getMonth()+1) + z(d.getDate()) + '-' + z(d.getHours()) + z(d.getMinutes());
 }
+function bloquearCliente(si){
+  byId('q-cardcliente').classList.toggle('locked', si);
+  ['q-tel','q-cliente','q-contacto','q-ciudad','q-zona','q-correo'].forEach(id => { byId(id).readOnly = si; });
+  byId('q-tipo').disabled = si;
+}
 function resetCotizador(){
   STATE.items = [];
   STATE.folio = nowFolio();
+  STATE.editFolio = null;
   STATE.saved = false;
+  bloquearCliente(false);
+  byId('q-editbar').classList.add('hidden');
   ['q-tel','q-cliente','q-contacto','q-ciudad','q-zona','q-correo'].forEach(id => byId(id).value = '');
   byId('q-desc').value = 0;
   byId('q-tipo').selectedIndex = 0;
+  byId('q-pago').selectedIndex = 0;
   byId('q-qty').value = 1;
   const b = byId('q-btnGuardar'); b.disabled = false; b.textContent = '✓ Guardar pedido';
   actualizarListaBadge();
   renderItems();
+  byId('top-title').textContent = 'Nueva cotización';
   byId('top-sub').textContent = 'Folio ' + STATE.folio;
+}
+
+// ---- Editar una cotización o pedido ya guardado ----
+const EDITABLES = ['Cotizado', 'Pedido confirmado', 'Despachado', 'Recibido por cliente'];
+async function editarPedido(folio){
+  const p = pedidoById(folio);
+  if (!p) return;
+  if (!EDITABLES.includes(p.estado)){ toast('Este pedido ya no se puede editar. Usa "Novedad" para corregirlo.', 'err'); return; }
+  resetCotizador();
+  STATE.keepEdit = true;
+  goto('cotizar');
+  byId('q-tel').value = p.telefono;
+  byId('q-cliente').value = p.cliente;
+  bloquearCliente(true);
+  try {
+    const d = await apiGet('buscarCliente', { telefono: p.telefono });
+    const c = d.cliente;
+    if (c){
+      if (!byId('q-cliente').value) byId('q-cliente').value = c.cliente || '';
+      byId('q-contacto').value = c.contacto || '';
+      byId('q-ciudad').value = c.ciudad || '';
+      byId('q-zona').value = c.zona || '';
+      byId('q-correo').value = c.correo || '';
+      const sel = byId('q-tipo');
+      if (c.tipo && Array.from(sel.options).some(o => o.value === c.tipo)) sel.value = c.tipo;
+    }
+  } catch (e) { /* sin datos extra del cliente: la lista de precios queda en la general */ }
+  onFamChange();
+  actualizarListaBadge();
+  const cat = currentCatalogoByRef();
+  STATE.items = (p.items || []).map(it => {
+    const c = cat[it.ref];
+    return { ref: it.ref, color: it.color, qty: it.qty, nombre: it.nombre || (c && c.nombre) || it.ref, pres: it.pres || (c && c.pres) || '',
+             precio: it.precio || (c ? c.precio : 0) };
+  }).filter(it => it.precio > 0);
+  byId('q-desc').value = p.descPct;
+  if (p.formaPago && Array.from(byId('q-pago').options).some(o => o.value === p.formaPago)) byId('q-pago').value = p.formaPago;
+  STATE.folio = p.folio;
+  STATE.editFolio = p.folio;
+  STATE.saved = false;
+  renderItems();
+  byId('q-editfolio').textContent = p.folio;
+  byId('q-editestado').textContent = p.cobrado > 0
+    ? 'Ya tiene abonos por ' + money(p.cobrado) + ': el nuevo total no puede quedar por debajo.'
+    : 'Cambia productos, cantidades, descuento o forma de pago.';
+  byId('q-editbar').classList.remove('hidden');
+  byId('q-btnGuardar').textContent = '✓ Guardar cambios';
+  byId('top-title').textContent = 'Editar cotización';
+  byId('top-sub').textContent = 'Folio ' + STATE.folio;
+  const sinDetalle = !STATE.items.length || STATE.items.length < (p.resumen.match(/\d+x /g) || []).length;
+  if (sinDetalle) toast('No pude reconstruir todos los productos de este pedido. Revísalos antes de guardar.', 'err');
+  else if (!(p.items || []).some(it => it.precio) && Math.abs(calc().sub - p.subtotal) > 1) toast('Los precios de lista cambiaron desde que se creó. Revisa el total.', 'err');
+}
+function cancelarEdicion(){
+  resetCotizador();
+  goto('pedidos');
 }
 let lookupTimer = null;
 function lookupCliente(){
@@ -644,7 +716,29 @@ function calc(){
   return { sub, dp, descV, base, iva: iv, tot };
 }
 
+async function guardarEdicion(){
+  if (STATE.saving || STATE.saved) return;
+  if (!STATE.items.length){ toast('El pedido debe tener al menos un producto', 'err'); return; }
+  const t = calc();
+  STATE.saving = true;
+  const btn = byId('q-btnGuardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+  try {
+    const res = await apiPost('editarPedido', {
+      folio: STATE.editFolio, items: STATE.items, subtotal: t.sub, descuentoPct: t.dp, formaPago: byId('q-pago').value
+    });
+    STATE.saved = true;
+    btn.textContent = 'Guardado ✓';
+    byId('gd-titulo').textContent = 'Cambios guardados';
+    byId('gd-folio').textContent = res.folio + (res.saldo > 1 && res.saldo < res.total ? ' · saldo por cobrar ' + money(res.saldo) : '');
+    byId('gd-total').textContent = money(res.total);
+    openOverlay('ov-guardado');
+  } catch (err){
+    btn.disabled = false; btn.textContent = '✓ Guardar cambios';
+    toast('No se pudo guardar: ' + errMsg(err), 'err');
+  } finally { STATE.saving = false; }
+}
 async function guardarPedido(){
+  if (STATE.editFolio) return guardarEdicion();
   if (STATE.saving || STATE.saved) return;
   const tel = byId('q-tel').value.trim();
   if (!tel){ toast('Escribe el teléfono del cliente', 'err'); return; }
@@ -665,6 +759,7 @@ async function guardarPedido(){
     STATE.saved = true;
     btn.textContent = 'Guardado ✓';
     byId('top-sub').textContent = 'Folio ' + STATE.folio;
+    byId('gd-titulo').textContent = 'Pedido guardado';
     byId('gd-folio').textContent = res.folio;
     byId('gd-total').textContent = money(res.total);
     openOverlay('ov-guardado');
@@ -683,7 +778,7 @@ function enviarWhatsApp(){
   const t = calc();
   const cli = byId('q-cliente').value || 'cliente';
   const arr = STATE.items.map(l => '• ' + l.nombre + ' ' + l.color + ': ' + l.qty + ' x ' + money(l.precio));
-  const msg = 'Cotización scrink ' + STATE.folio + '\n' + 'Cliente: ' + cli + '\n' +
+  const msg = 'Cotización scrink ' + STATE.folio + (STATE.editFolio ? ' (actualizada)' : '') + '\n' + 'Cliente: ' + cli + '\n' +
     (arr.length ? arr.join('\n') + '\n' : '') +
     'Subtotal: ' + money(t.sub) + '\n' +
     (t.dp > 0 ? 'Descuento ' + t.dp + '%: -' + money(t.descV) + '\n' : '') +
@@ -846,6 +941,7 @@ function pedidoCardHtml(p){
   const btnDesp = !cancelado ? '<button class="btn sm accent" onclick="abrirDespacho(\'' + p.folio + '\')">📦 ' + (p.despacho ? 'Otro envío' : 'Despacho') + '</button>' : '';
   const btnAbono = (!cancelado && p.saldo > 1) ? '<button class="btn sm primary" onclick="abrirAbono(\'' + p.folio + '\')">💵 Abono</button>' : '';
   const btnNov = (!cancelado && !cotizado) ? '<button class="btn sm" onclick="abrirNovedad(\'' + p.folio + '\')">⚠ Novedad</button>' : '';
+  const btnEdit = EDITABLES.includes(p.estado) ? '<button class="btn sm" onclick="editarPedido(\'' + p.folio + '\')">✏️ Editar</button>' : '';
   return '<div class="pcard">' +
     '<div class="ptop"><div><div class="pname">' + escapeHtml(p.cliente || 'Cliente') + '</div><div class="psub">' + p.folio + ' · ' + fmtFecha(p.fecha) + '</div></div>' +
     '<span class="pill ' + estadoClass(p.estado) + '">' + escapeHtml(p.estado) + '</span></div>' +
@@ -854,6 +950,7 @@ function pedidoCardHtml(p){
     (cotizado ? '' : '<div class="bar"><i style="width:' + pct + '%"></i></div>') +
     (tags.length ? '<div class="pmeta">' + tags.join('') + '</div>' : '') +
     '<div class="pactions">' + btnDesp + btnAbono + btnNov + '</div>' +
+    (btnEdit ? '<div class="pactions">' + btnEdit + '</div>' : '') +
     '<div class="pactions"><select onchange="cambiarEstado(\'' + p.folio + '\', this.value)">' +
       ESTADOS_PEDIDO.filter(es => es !== 'Cobrado' || p.estado === 'Cobrado').map(es => '<option ' + (es === p.estado ? 'selected' : '') + '>' + es + '</option>').join('') + '</select></div>' +
     '</div>';
@@ -928,7 +1025,7 @@ async function guardarDespacho(){
 function tasaComision(p){
   const c = STATE.comision;
   const propia = c.propias && c.propias[STATE.freelance];
-  return (propia !== undefined ? propia : c.base) + (p.nPedido === 1 ? c.bono : 0);
+  return (propia !== undefined ? propia : c.base) + (p.primero ? c.bono : 0);
 }
 function abrirAbono(folio){
   const p = pedidoById(folio);
@@ -959,7 +1056,8 @@ function actualizarAbonoPreview(){
   if (v > p.saldo + 1) html = '<b class="neg">El abono supera el saldo (' + money(p.saldo) + ')</b>';
   else if (v <= 0) html = 'Escribe el valor que recibiste del cliente.';
   else {
-    html = 'Comisión de este abono: <b>' + money(base * rate) + '</b><br>Base sin IVA ' + money(base) + ' × ' + (rate * 100).toFixed(0) + '%' + (p.nPedido === 1 ? ' (incluye bono de primer pedido)' : '');
+    html = 'Comisión de este abono: <b>' + money(base * rate) + '</b><br>Base sin IVA ' + money(base) + ' × ' + (rate * 100).toFixed(0) + '%' + (p.primero ? ' (incluye el bono: es el primer pedido despachado del cliente)' : '');
+    if (p.bonoEstado === 'proyectado') html += '<br><small>Si este es el primer pedido que se despacha del cliente, el 1% de bono sobre este abono se suma al registrar el despacho.</small>';
     if (byId('ab-cerrar').checked) html += '<br>Se cierra el saldo restante de ' + money(p.saldo - v) + ' como ajuste (no genera comisión).';
     else if (parcial) html += '<br>Queda un saldo de ' + money(p.saldo - v) + ': su comisión se genera cuando el cliente lo pague.';
   }
@@ -1081,26 +1179,65 @@ async function guardarNovedad(){
 // ---------------------------------------------------------------------
 // Comisión
 // ---------------------------------------------------------------------
+function pctTxt(x){ return (Math.round(x * 10000) / 100).toString().replace('.', ',') + '%'; }
 async function loadComision(){
-  byId('c-list').innerHTML = '<div class="skeleton" style="height:56px"></div>';
-  const c = STATE.comision;
-  byId('c-regla').textContent = 'Comisión ' + Math.round(c.base * 100) + '% sobre lo cobrado sin IVA, más ' + Math.round(c.bono * 100) + '% en el primer pedido de cada cliente. Se causa con cada abono.';
+  byId('c-list').innerHTML = '<div class="card"><div class="skeleton" style="height:56px"></div></div>';
   try {
     const data = await apiGet('misComisiones', { freelance: STATE.freelance });
     STATE.comisionesCache = data;
-    byId('c-gen').textContent = money(data.resumen.totalGenerado);
-    byId('c-pag').textContent = money(data.resumen.totalPagado);
-    byId('c-pend').textContent = money(data.resumen.totalPendiente);
-    const list = data.lineas || [];
-    byId('c-list').innerHTML = list.length ? list.map(l => {
-      const ajuste = l.tipo !== 'Abono';
-      return '<div class="litem" style="cursor:default"><div class="av">' + (ajuste ? '↩️' : (l.primer === 'Sí' ? '⭐' : '💰')) + '</div>' +
-        '<div class="main"><b>' + escapeHtml(l.cliente) + '</b><span>' + l.folio + ' · ' + fmtFecha(l.fecha) + ' · ' + (ajuste ? 'Devolución' : 'Abono') + ' · base ' + money(l.base) + ' × ' + Math.round(l.pct * 100) + '%</span></div>' +
-        '<div style="text-align:right"><b class="' + (l.comision < 0 ? 'neg' : '') + '">' + money(l.comision) + '</b><div style="font-size:11px;color:' + (l.estado === 'Pagada' ? 'var(--green)' : 'var(--muted)') + '">' + escapeHtml(l.estado || 'Pendiente') + '</div></div></div>';
-    }).join('') : '<div class="empty"><div class="ic">💰</div><b>Aún no hay comisión</b><span>Se genera con cada abono que registres</span></div>';
+    const r = data.resumen, c = STATE.comision;
+    byId('c-pre').textContent = money(r.totalPreliquidada || 0);
+    byId('c-gen').textContent = money(r.totalGenerado);
+    byId('c-pag').textContent = money(r.totalPagado);
+    byId('c-pend').textContent = money(r.totalPendiente);
+    const desde = data.preliqDesde === 'Facturado' ? 'facturados' : 'despachados';
+    byId('c-regla').innerHTML = '<b>Preliquidada</b>: lo que ganarías por los pedidos ya ' + desde + ' que el cliente aún no paga (estimado). ' +
+      '<b>Generada</b>: la comisión que ya nació porque el cliente pagó (' + Math.round(c.base * 100) + '% sobre lo cobrado sin IVA, más ' + Math.round(c.bono * 100) + '% en el primer pedido de cada cliente). ' +
+      'Solo la generada se te paga.';
+    renderComision();
   } catch (err){
-    byId('c-list').innerHTML = '<div class="empty"><b>Error</b><span>' + escapeHtml(errMsg(err)) + '</span></div>';
+    byId('c-list').innerHTML = '<div class="card"><div class="empty"><b>Error</b><span>' + escapeHtml(errMsg(err)) + '</span></div></div>';
   }
+}
+function renderComision(){
+  const data = STATE.comisionesCache;
+  if (!data) return;
+  const chip = document.querySelector('#com-filtros .chip.on');
+  const f = chip ? chip.dataset.f : 'pedidos';
+  const box = byId('c-list');
+  if (f === 'mov'){
+    const list = data.lineas || [];
+    box.innerHTML = list.length ? '<div class="card">' + list.map(l => {
+      const bono = l.tipo === 'Bono 1%';
+      const ajuste = l.tipo !== 'Abono' && !bono;
+      return '<div class="litem" style="cursor:default"><div class="av">' + (ajuste ? '↩️' : (bono || l.primer === 'Sí' ? '⭐' : '💰')) + '</div>' +
+        '<div class="main"><b>' + escapeHtml(l.cliente) + '</b><span>' + l.folio + ' · ' + fmtFecha(l.fecha) + ' · ' + (bono ? 'Bono 1% (primer despacho)' : ajuste ? 'Devolución' : 'Abono') + ' · base ' + money(l.base) + ' × ' + pctTxt(l.pct) + (l.primer === 'Sí' ? ' · incluye bono' : '') + '</span></div>' +
+        '<div style="text-align:right"><b class="' + (l.comision < 0 ? 'neg' : '') + '">' + money(l.comision) + '</b><div style="font-size:11px;color:' + (l.estado === 'Pagada' ? 'var(--green)' : 'var(--muted)') + '">' + escapeHtml(l.estado || 'Pendiente') + '</div></div></div>';
+    }).join('') + '</div>' : '<div class="card"><div class="empty"><div class="ic">💰</div><b>Aún no hay movimientos</b><span>Aparecen con cada abono que registres</span></div></div>';
+    return;
+  }
+  let peds = data.pedidos || [];
+  if (f === 'bono') peds = peds.filter(p => p.primero);
+  box.innerHTML = peds.length ? peds.map(comisionPedidoHtml).join('') :
+    '<div class="card"><div class="empty"><div class="ic">📦</div><b>' + (f === 'bono' ? 'Ningún pedido con bono todavía' : 'Aún no hay pedidos') + '</b><span>El bono +1% es del primer pedido despachado de cada cliente</span></div></div>';
+}
+function bonoTxt(p){
+  if (p.bonoEstado === 'asignado') return '⭐ Primer pedido despachado del cliente · bono +1%';
+  if (p.bonoEstado === 'proyectado') return '⭐ Bono +1% para el primer pedido que se despache de este cliente';
+  return 'Pedido N° ' + p.nPedido + ' del cliente · sin bono (el cliente ya tuvo un primer pedido despachado)';
+}
+function comisionPedidoHtml(p){
+  const cot = p.estado === 'Cotizado';
+  const tasa = p.bono > 0 ? pctTxt(p.pctBase) + ' + ' + pctTxt(p.bono) + ' bono = <b>' + pctTxt(p.pct) + '</b>' : '<b>' + pctTxt(p.pct) + '</b>';
+  const etiqueta = cot ? 'Tasa si se concreta' : (p.pctReal ? '% liquidado' : '% que aplicará');
+  return '<div class="pcard">' +
+    '<div class="ptop"><div><div class="pname">' + escapeHtml(p.cliente || 'Cliente') + '</div><div class="psub">' + p.folio + ' · ' + fmtFecha(p.fecha) + '</div></div>' +
+    '<span class="pill ' + estadoClass(p.estado) + '">' + escapeHtml(p.estado) + '</span></div>' +
+    '<div class="pmeta"><span class="tag ' + (p.bonoEstado === 'no' ? '' : 'star') + '">' + bonoTxt(p) + '</span></div>' +
+    '<div class="rateline"><span>' + etiqueta + ': ' + tasa + '</span><span style="color:var(--muted)">Base sin IVA ' + money(p.base) + '</span></div>' +
+    (cot ? '<div class="hint" style="font-size:12px;color:var(--muted);margin-top:8px">Aún cotizado: no genera comisión hasta que se despache y se cobre.</div>' :
+    '<div class="cgrid"><div><small>Preliquidada</small><b>' + money(p.preliquidada) + '</b></div><div><small>Generada</small><b>' + money(p.generada) + '</b></div><div><small>Pagada</small><b>' + money(p.pagada) + '</b></div></div>') +
+    '</div>';
 }
 
 // ---------------------------------------------------------------------
