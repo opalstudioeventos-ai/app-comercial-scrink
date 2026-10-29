@@ -84,6 +84,7 @@ main.view{padding:16px 16px 8px;animation:viewIn .28s cubic-bezier(.16,1,.3,1)}
 .tile::after{content:'';position:absolute;right:-20px;top:-20px;width:70px;height:70px;border-radius:50%;background:var(--kraft-soft);opacity:.6}
 .tile .k{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;position:relative}
 .tile .v{font-size:21px;font-weight:800;margin-top:5px;position:relative;letter-spacing:-.4px}
+.tile.wide{grid-column:1/-1}
 .tile.dark{background:linear-gradient(135deg,var(--ink),#312f2b);color:#fff;border-color:var(--ink)}
 .tile.dark .k{color:#cfc8bb}
 .tile.dark::after{background:rgba(200,169,126,.18)}
@@ -338,6 +339,7 @@ label.fotobtn input{display:none}
     <div class="tiles">
       <div class="tile dark"><div class="k">Cobrado</div><div class="v" id="d-vendido">$0</div></div>
       <div class="tile"><div class="k">Por cobrar</div><div class="v" id="d-porcobrar">$0</div></div>
+      <div class="tile wide" style="cursor:pointer" onclick="goto('comision')"><div class="k">Comisión preliquidada</div><div class="v" id="d-compre">$0</div><div class="sub" id="d-compre-sub">Estimada sobre pedidos despachados que aún no se cobran</div></div>
       <div class="tile"><div class="k">Comisión pendiente</div><div class="v" id="d-compend">$0</div></div>
       <div class="tile"><div class="k">Comisión pagada</div><div class="v" id="d-compag">$0</div></div>
     </div>
@@ -598,7 +600,7 @@ label.fotobtn input{display:none}
   <div class="card helpcard">
     <p><b>Cotizado</b> · Ya le enviaste la cotización; aún no hay compromiso del cliente.</p>
     <p><b>Pedido confirmado</b> · El cliente aceptó (normalmente al recibir el primer abono).</p>
-    <p><b>Despachado</b> · La mercancía ya salió hacia el cliente. <u>Bono +1%:</u> lo lleva el primer pedido de cada cliente que se despacha (si un pedido se cancela antes de despacharse, el bono pasa al siguiente que sí salga). Si ya había abonos, el 1% se suma al registrar el despacho.</p>
+    <p><b>Despachado</b> · La mercancía ya salió hacia el cliente. <u>Bono +1%:</u> lo llevan los pedidos del primer despacho de cada cliente (si el mismo día salen varias facturas, todas lo llevan; si un pedido se cancela antes de despacharse, el bono pasa al siguiente despacho). Si ya había abonos, el 1% se suma al registrar el despacho.</p>
     <p><b>Recibido por cliente</b> · El cliente confirmó que le llegó.</p>
     <p><b>Facturado</b> · Ya se emitió la factura.</p>
     <p><b>Cobrado</b> · Se recibió todo el dinero (o se cerró el saldo por retención). Cambia solo al registrar los abonos.</p>

@@ -317,6 +317,8 @@ async function loadDashboard(){
     const activos = STATE.pedidosCache.filter(p => p.estado !== 'Cancelado');
     byId('d-vendido').textContent = money(activos.reduce((s, p) => s + p.cobrado, 0));
     byId('d-porcobrar').textContent = money(activos.filter(p => p.estado !== 'Cotizado').reduce((s, p) => s + Math.max(0, p.saldo), 0));
+    byId('d-compre').textContent = money(com.resumen.totalPreliquidada || 0);
+    byId('d-compre-sub').textContent = 'Estimada sobre pedidos ' + (com.preliqDesde === 'Facturado' ? 'facturados' : 'despachados') + ' que aún no se cobran';
     byId('d-compend').textContent = money(com.resumen.totalPendiente);
     byId('d-compag').textContent = money(com.resumen.totalPagado);
 
@@ -1056,8 +1058,8 @@ function actualizarAbonoPreview(){
   if (v > p.saldo + 1) html = '<b class="neg">El abono supera el saldo (' + money(p.saldo) + ')</b>';
   else if (v <= 0) html = 'Escribe el valor que recibiste del cliente.';
   else {
-    html = 'Comisión de este abono: <b>' + money(base * rate) + '</b><br>Base sin IVA ' + money(base) + ' × ' + (rate * 100).toFixed(0) + '%' + (p.primero ? ' (incluye el bono: es el primer pedido despachado del cliente)' : '');
-    if (p.bonoEstado === 'proyectado') html += '<br><small>Si este es el primer pedido que se despacha del cliente, el 1% de bono sobre este abono se suma al registrar el despacho.</small>';
+    html = 'Comisión de este abono: <b>' + money(base * rate) + '</b><br>Base sin IVA ' + money(base) + ' × ' + (rate * 100).toFixed(0) + '%' + (p.primero ? ' (incluye el bono: sale en el primer despacho del cliente)' : '');
+    if (p.bonoEstado === 'proyectado') html += '<br><small>Si este sale en el primer despacho del cliente,el 1% de bono sobre este abono se suma al registrar el despacho.</small>';
     if (byId('ab-cerrar').checked) html += '<br>Se cierra el saldo restante de ' + money(p.saldo - v) + ' como ajuste (no genera comisión).';
     else if (parcial) html += '<br>Queda un saldo de ' + money(p.saldo - v) + ': su comisión se genera cuando el cliente lo pague.';
   }
@@ -1222,8 +1224,8 @@ function renderComision(){
     '<div class="card"><div class="empty"><div class="ic">📦</div><b>' + (f === 'bono' ? 'Ningún pedido con bono todavía' : 'Aún no hay pedidos') + '</b><span>El bono +1% es del primer pedido despachado de cada cliente</span></div></div>';
 }
 function bonoTxt(p){
-  if (p.bonoEstado === 'asignado') return '⭐ Primer pedido despachado del cliente · bono +1%';
-  if (p.bonoEstado === 'proyectado') return '⭐ Bono +1% para el primer pedido que se despache de este cliente';
+  if (p.bonoEstado === 'asignado') return '⭐ Primer despacho del cliente · bono +1%';
+  if (p.bonoEstado === 'proyectado') return '⭐ Bono +1% para lo que se despache primero de este cliente';
   return 'Pedido N° ' + p.nPedido + ' del cliente · sin bono (el cliente ya tuvo un primer pedido despachado)';
 }
 function comisionPedidoHtml(p){
